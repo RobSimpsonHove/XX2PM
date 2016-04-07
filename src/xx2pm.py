@@ -9,27 +9,42 @@ import sys
 import re
 import time
 import codecs
-
-
+import glob
+from shutil import copyfile
 import configparser
 
-c=configparser.ConfigParser()
-c.optionxform=str
-with codecs.open(sys.argv[1], 'r', encoding='utf-8') as f:
-    c.read_file(f)
-config=dict(c.items('xx2pm'))
-print(config)
-
-
+## Set timestamps
 now = time.strftime("%Y%m%d-%H%M%S")
+today = time.strftime("%Y%m%d")
+
+## Set and create run directories
 rundir = sys.argv[2]
 rundirsub=rundir + '//' + now
-
 if not os.path.exists(rundir):
     os.makedirs(rundir)
 if not os.path.exists(rundirsub):
     os.makedirs(rundirsub)
 rundirsub=os.path.abspath(rundirsub)
+
+## Replace token in tempfile
+f = open(sys.argv[1],'r')
+origtemplate = f.read()
+f.close()
+template = origtemplate.replace("$today",today)
+template = origtemplate.replace("$now",now)
+f = open(rundirsub+'/template.properties','w')
+f.write(template)
+f.close()
+
+c=configparser.ConfigParser()
+c.optionxform=str
+with codecs.open(rundirsub+'/template.properties', 'r', encoding='utf-8') as f:
+    c.read_file(f)
+config=dict(c.items('xx2pm'))
+print(config)
+
+
+
 
 #rundirsub='C:/Users/PBDIA00022/PycharmProjects/XX2PM/mango/20160316-135357'
 #parser = configparser.ConfigParser()
@@ -43,21 +58,8 @@ class main:
 
         ## Get list of sources, expanding dirs if necessary
         sources = config.get('sources')
-        print(sources)
-        self.sourcelist = []
-        self.itemlist = []
-        for item in sources.split(','):
-            print(item)
-            print('')
-            if os.path.isdir(item):
-                print('Checking dir')
-                for file in glob.glob(item+"\*.sql"):
-                    self.sourcelist.append(file)
-                    self.itemlist.append(stem(file))
-            else:
-                self.sourcelist.append(item)
-                self.itemlist.append(stem(item))
-        print(self.itemlist)
+        print('sources:',sources)
+        self.sourcelist, self.itemlist = get_fd_items(sources,['*.sql'])
          ## Pull source data into foci in run directory
         getsources(self.sourcelist)
 
@@ -66,6 +68,28 @@ class main:
         print(self.tasklist)
         executetasklist(self)
 
+
+def get_fd_items(filesOrDirs,extensions):
+    ## extensions = ("*.pgn","*.jpg","*.jpeg",)
+    sourcelist = []
+
+    for item in filesOrDirs.split(','):
+        if os.path.isdir(item):
+            print('Checking dir',item)
+            list = []
+            for extension in extensions:
+                list.extend(glob.glob(item+'/'+extension))
+            sourcelist.extend(list)
+        else:
+            sourcelist.extend(item)
+    print('sourcelist:',sourcelist)
+
+    itemlist = []
+    for item in sourcelist:
+        itemlist.append(stem(item))
+
+    print('itemlist:',itemlist)
+    return sourcelist, itemlist
 
 
 def get_previous_focus(tasklist, path, name, currentstep):
@@ -125,8 +149,34 @@ def executetasklist(self):
                     aggproc(self,inp,out,tml=value)
                 elif re.search('^join',step):
                     joinproc(self,inp,out,rhs=value)
+                elif re.search('^meta',step):
+                    metaproc(self,inp,out,meta=value)
                 elif re.search('^fin',step):
                     finproc(self,step)
+
+
+def metaproc(self,inp,out,meta):
+
+    if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
+
+        print('Really doing metadata  ' + meta + ' for ' + inp +' to ' + out +'...')
+
+        qsfmlist, dummy = get_fd_items(meta,['*.qsfm'])
+
+
+        if not os.path.isfile(meta):
+            print('meta',meta)
+            metafile=rundirsub+'//'+out+'_.qsfm'
+            f = open(metafile, 'w')
+            f.write(meta)
+            f.close()
+        else:
+            copyfile(meta, rundirsub+'//'+out+'_.qsfm')
+
+        qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+out+'_.qsfm', rundirsub+'//'+out+'.ftr',warn='true')
+
+    else:
+        print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
 
 
 
@@ -134,7 +184,7 @@ def derproc(self,inp,out,fdl):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
 
-        print('Really doing2 derivations  ' + fdl + ' for ' + inp +' to ' + out +'...')
+        print('Really doing derivations  ' + fdl + ' for ' + inp +' to ' + out +'...')
 
         if not os.path.isfile(fdl):
             print('fdl',fdl)
@@ -152,7 +202,7 @@ def derproc(self,inp,out,fdl):
 
 
 def aggproc(self,inp,out,tml):
-    print('AGGGS:',out)
+
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
 
         name=os.path.splitext(inp)[0]
@@ -180,7 +230,6 @@ def aggproc(self,inp,out,tml):
 
 
 
-
 def joinproc(self,inp,out,rhs):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
@@ -196,7 +245,7 @@ def joinproc(self,inp,out,rhs):
             if rhsfields=='*':
                 rhsfields=None
 
-            qsjoin(rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',rundirsub+'//'+rhsfocus,fields=rhsfields)
+            qsjoinplus(rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',rundirsub+'//'+rhsfocus,fields=rhsfields)
         else:
             print('No key set for ',name)
     else:
@@ -240,6 +289,7 @@ def getsql(sql):
 
 def getftr(ftr):
     pass
+
 
 def gettxt(txt):
     pass
@@ -304,11 +354,6 @@ def qsderive(derivations, input, output=None):
 
 def qsjoin(input, keys, output, join, fields=None, xfields=None, force=None):
 
-    presort=True
-    if presort:
-        input=qssortfix(input,keys)
-        join=qssortfix(join,keys)
-
     args=[]
     args.extend(['-input',input,'-keys',keys,'-output',output, '-join', join])
 
@@ -323,6 +368,24 @@ def qsjoin(input, keys, output, join, fields=None, xfields=None, force=None):
     runqsdb("qsjoin.exe", args)
 
 
+#qsimportmeta(rundirsub+'//'+inp, rundirsub+'//'+out+'_.qsfm', rundirsub+'//'+out+'.ftr',warn='true')
+
+def qsimportmetadata(input, metadata, output=None, fields=None, warn=None):
+
+    args=[]
+    args.extend(['-input',input,'-metadata',metadata])
+
+    for arg in ['output','fields']:
+        if eval(arg):
+            args.extend(['-'+arg,eval(arg)])
+
+    for arg in ['warn']:
+        if eval(arg):
+            args.extend(['-'+arg])
+
+    runqsdb("qsimportmetadata.exe", args)
+
+
 def qssortfix(input,keys):
 
         result=runqsdb("qssort.exe", ['-check -input '+input+' -keys '+keys])
@@ -334,6 +397,24 @@ def qssortfix(input,keys):
 
         return input
 
+
+def qsjoinplus(input, keys, output, join, fields=None, xfields=None, force=None):
+
+    presort=True
+    if presort:
+        input=qssortfix(input,keys)
+        join=qssortfix(join,keys)
+
+    qsjoin(input, keys, output, join, fields, xfields, force)
+
+
+def qsmeasureplus(aggregations, input, output, keys, fields=None, xfields=None, force=None):
+
+    presort=True
+    if presort:
+        input=qssortfix(input,keys)
+
+    qsmeasure(aggregations, input, output, keys, fields, xfields, force)
 
 
 
