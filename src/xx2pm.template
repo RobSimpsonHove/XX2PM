@@ -8,7 +8,8 @@ sources=C:\Users\PBDIA00022\PycharmProjects\PD2SQL\src\mango\20160308-115724\
 .udc=PBDIA00022@PDSYS
 .keys=AKTORID
 
-tasklist=der1,agg1,der2,join,metaMe
+tasklist=der1,agg1,der2,join,meta,copyFinal
+##,agg1,der2,join
 
 Giver.der1=create n :=1;
 Activities.der1=create AKTORID := tointeger(CA_CUSTOMER_ID);
@@ -20,7 +21,9 @@ Activities.der2=create donk := 99;
 
 Giver.join=Activities_der1_agg1_der2.donk,countActivities
 
-Giver.metaMe=C:\Users\PBDIA00022\PycharmProjects\XX2PM\code\metadata.qsfm
+Giver.meta=C:\Users\PBDIA00022\PycharmProjects\XX2PM\code
+
+Giver.copyFinal=C:\Users\PBDIA00022\PycharmProjects\XX2PM\code\Final_$now.ftr
 
 ## TODO Multiple metadatfiles
 ## TODO Publish with datestamp: qscopy, passthrough $today, $now

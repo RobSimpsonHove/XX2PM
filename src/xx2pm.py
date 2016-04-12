@@ -1,8 +1,21 @@
 # -*- encoding: utf-8 -*-
 
-## Started qsdbc's
+
 ##      can't pick up as external module
-## autofix sort for join!
+
+##  qs: copy, importdb, measure, derive, join, importmetadata,
+##  qsjoinplus, qsmeasureplus: do sorts if required
+##  qssortfix
+##  TODO failing to pick up metadata
+## *** Error: C:\Users\PBDIA00022\PycharmProjects\XX2PM\mango\20160410-160820\metadata_.qsfm (The system cannot find the file specified)
+##  TODO 'score' *.ftr to DB table
+
+
+## der, agg, join, meta, copy
+## sources= ....  file or dir, expands dir for *.sql
+## meta: file or dir, expands dir for *.qsfm
+
+## $today YYYYMMDD, $now YYYYMMDD-HHMMSS
 
 import os
 import sys
@@ -31,8 +44,9 @@ f = open(sys.argv[1],'r')
 origtemplate = f.read()
 f.close()
 template = origtemplate.replace("$today",today)
-template = origtemplate.replace("$now",now)
-f = open(rundirsub+'/template.properties','w')
+template = template.replace("$now",now)
+print(template)
+f = open(rundirsub+'/template.properties','w', encoding='utf-8')
 f.write(template)
 f.close()
 
@@ -71,9 +85,11 @@ class main:
 
 def get_fd_items(filesOrDirs,extensions):
     ## extensions = ("*.pgn","*.jpg","*.jpeg",)
+    print('FileOrDirs',filesOrDirs, extensions)
     sourcelist = []
 
     for item in filesOrDirs.split(','):
+        print('Split item ####:',item)
         if os.path.isdir(item):
             print('Checking dir',item)
             list = []
@@ -81,7 +97,7 @@ def get_fd_items(filesOrDirs,extensions):
                 list.extend(glob.glob(item+'/'+extension))
             sourcelist.extend(list)
         else:
-            sourcelist.extend(item)
+            sourcelist.append(item)
     print('sourcelist:',sourcelist)
 
     itemlist = []
@@ -151,6 +167,8 @@ def executetasklist(self):
                     joinproc(self,inp,out,rhs=value)
                 elif re.search('^meta',step):
                     metaproc(self,inp,out,meta=value)
+                elif re.search('^copy',step):
+                    copyproc(self,inp,to=value)
                 elif re.search('^fin',step):
                     finproc(self,step)
 
@@ -161,19 +179,17 @@ def metaproc(self,inp,out,meta):
 
         print('Really doing metadata  ' + meta + ' for ' + inp +' to ' + out +'...')
 
-        qsfmlist, dummy = get_fd_items(meta,['*.qsfm'])
+        qsfmlist, itemlist = get_fd_items(meta,['*.qsfm'])
+        for i in range(len(qsfmlist)):
+            qsfm=qsfmlist[i]
+            item=itemlist[i]
+            print('Q,I',qsfm,item)
+            copyfile(qsfm, rundirsub+'//'+item+'.qsfm')
 
-
-        if not os.path.isfile(meta):
-            print('meta',meta)
-            metafile=rundirsub+'//'+out+'_.qsfm'
-            f = open(metafile, 'w')
-            f.write(meta)
-            f.close()
-        else:
-            copyfile(meta, rundirsub+'//'+out+'_.qsfm')
-
-        qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+out+'_.qsfm', rundirsub+'//'+out+'.ftr',warn='true')
+            if len(qsfmlist)==1:     # If only one metadatfile, no need for metadata naming
+                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'_'+'.qsfm', rundirsub+'//'+out+'.ftr',warn='true')
+            else:
+                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'_'+'.qsfm', rundirsub+'//'+out+'_'+item+'.ftr',warn='true')
 
     else:
         print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
@@ -185,7 +201,7 @@ def derproc(self,inp,out,fdl):
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
 
         print('Really doing derivations  ' + fdl + ' for ' + inp +' to ' + out +'...')
-
+        ## Make local copy of fdl
         if not os.path.isfile(fdl):
             print('fdl',fdl)
             fdlfile=rundirsub+'//'+out+'_.fdl'
@@ -201,6 +217,11 @@ def derproc(self,inp,out,fdl):
         print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
 
 
+def copyproc(self,ffrom,to):
+
+    qscopy(rundirsub+'//'+ffrom, to)
+
+
 def aggproc(self,inp,out,tml):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
@@ -211,6 +232,7 @@ def aggproc(self,inp,out,tml):
 
         if keys!=None:
 
+             ## Make local copy of tml
             if not os.path.isfile(tml):
                 print('fdl',tml)
                 tmlfile=rundirsub+'//'+out+'_.tml'
@@ -295,12 +317,31 @@ def gettxt(txt):
     pass
 
 
+############### QSDBC's #######################################################
+
 def runqsdb(command, args):
 
     qshome='C:/PortraitMiner/server/qs7.0B/win64/bin/'
-    print('EXEC',qshome+command,[command]+args)
+    print('EXECUTING',qshome+command,[command]+args)
     result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
     return result
+
+
+def qscopy(ffrom,to,force=None):
+
+    args=[]
+    args.extend(['-from',ffrom,'-to',to])
+
+    for arg in []:
+        if eval(arg):
+            args.extend(['-'+arg,eval(arg)])
+
+    for arg in ['force']:
+        if eval(arg):
+            args.extend(['-'+arg])
+
+    runqsdb('qscopy.exe', args)
+
 
 def qsimportdb(udc,sql,output,fields=None,xfields=None,force=None):
 
