@@ -1,6 +1,5 @@
 # -*- encoding: utf-8 -*-
 
-
 ##      can't pick up as external module
 
 ##  qs: copy, importdb, measure, derive, join, importmetadata,
@@ -10,10 +9,10 @@
 ## *** Error: C:\Users\PBDIA00022\PycharmProjects\XX2PM\mango\20160410-160820\metadata_.qsfm (The system cannot find the file specified)
 ##  TODO 'score' *.ftr to DB table
 
-
-## der, agg, join, meta, copy
+## DOCUMENT
 ## sources= ....  file or dir, expands dir for *.sql
-## meta: file or dir, expands dir for *.qsfm
+## taskslist: der, agg, join, meta, copy
+## meta task: file or dir, expands dir for *.qsfm
 
 ## $today YYYYMMDD, $now YYYYMMDD-HHMMSS
 
@@ -145,17 +144,12 @@ def executetasklist(self):
             prevname=get_previous_focus(self.tasklist,rundirsub,name,step)
             print('Building on',prevname)
 
-
             value = config.get( name + '.' + step)
 
             if value==None:
-                print('No ',name + '.' + step)
+                print('No such ',name + '.' + step)
+                
             else:
-                print('value::',value)
-                print('self.tasklist',self.tasklist)
-                print('step',step)
-                print('name',name)
-                print('prev',prevname)
                 inp=prevname
                 out=stem(prevname)+'_'+step
 
@@ -165,10 +159,14 @@ def executetasklist(self):
                     aggproc(self,inp,out,tml=value)
                 elif re.search('^join',step):
                     joinproc(self,inp,out,rhs=value)
-                elif re.search('^meta',step):
+                elif re.search('^metain',step):
                     metaproc(self,inp,out,meta=value)
+                elif re.search('^metaout',step):
+                    metaoutproc(self,inp,out,meta=value)
                 elif re.search('^copy',step):
                     copyproc(self,inp,to=value)
+                #elif re.search('^cmd',step):
+                #    cmdproc(self,inp,out,meta=value)
                 elif re.search('^fin',step):
                     finproc(self,step)
 
@@ -183,16 +181,26 @@ def metaproc(self,inp,out,meta):
         for i in range(len(qsfmlist)):
             qsfm=qsfmlist[i]
             item=itemlist[i]
-            print('Q,I',qsfm,item)
+            print('Q,I',qsfm,item, len(qsfmlist))
             copyfile(qsfm, rundirsub+'//'+item+'.qsfm')
 
             if len(qsfmlist)==1:     # If only one metadatfile, no need for metadata naming
-                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'_'+'.qsfm', rundirsub+'//'+out+'.ftr',warn='true')
+                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'.qsfm', rundirsub+'//'+out+'.ftr',warn='true')
             else:
-                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'_'+'.qsfm', rundirsub+'//'+out+'_'+item+'.ftr',warn='true')
+                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'.qsfm', rundirsub+'//'+out+'_'+item+'.ftr',warn='true')
 
     else:
         print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
+
+
+def metaproc(self,inp,out,meta):
+
+    if not os.path.isfile(rundirsub+'//'+inp+'.qsfm'):
+
+        qsexportmetadata(rundirsub+'//'+inp, rundirsub+'//'+inp+'.qsfm')
+
+    else:
+        print('Not overwriting', rundirsub+'//'+inp+'.qsfm','already exists')
 
 
 
@@ -229,6 +237,7 @@ def aggproc(self,inp,out,tml):
         name=os.path.splitext(inp)[0]
 
         keys = config.get(name + '.keys',config.get('.keys'))
+        library = config.get(name + '.library',config.get('.library'))
 
         if keys!=None:
 
@@ -359,12 +368,12 @@ def qsimportdb(udc,sql,output,fields=None,xfields=None,force=None):
     runqsdb('qsimportdb.exe', args)
 
 
-def qsmeasure(aggregations, input, output, keys, fields=None, xfields=None, force=None):
+def qsmeasure(aggregations, input, output, keys, fields=None, xfields=None, force=None, library=None):
 
     args=[]
     args.extend(['-aggregations',aggregations,'-input',input,'-output',output,'-keys',keys])
 
-    for arg in ['fields','xfields']:
+    for arg in ['fields','xfields','library']:
         if eval(arg):
             args.extend(['-'+arg,eval(arg)])
 
