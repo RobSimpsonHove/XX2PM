@@ -25,6 +25,10 @@ import glob
 from shutil import copyfile
 import configparser
 
+
+
+qshome='C:\\PortraitMiner7.0B\\server\\qs7.0B\\win32\\bin\\'
+
 ## Set timestamps
 now = time.strftime("%Y%m%d-%H%M%S")
 today = time.strftime("%Y%m%d")
