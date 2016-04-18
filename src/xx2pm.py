@@ -6,7 +6,7 @@
 ##  qsjoinplus, qsmeasureplus: do sorts if required
 ##  qssortfix
 ##  TODO failing to pick up metadata
-## *** Error: C:\Users\PBDIA00022\PycharmProjects\XX2PM\mango\20160410-160820\metadata_.qsfm (The system cannot find the file specified)
+    ## *** Error: C:\Users\PBDIA00022\PycharmProjects\XX2PM\mango\20160410-160820\metadata_.qsfm (The system cannot find the file specified)
 ##  TODO 'score' *.ftr to DB table
 
 ## DOCUMENT
