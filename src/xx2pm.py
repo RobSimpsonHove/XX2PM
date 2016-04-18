@@ -37,6 +37,8 @@ if not os.path.exists(rundir):
 if not os.path.exists(rundirsub):
     os.makedirs(rundirsub)
 rundirsub=os.path.abspath(rundirsub)
+import time
+time.sleep(2)
 
 ## Replace token in tempfile
 f = open(sys.argv[1],'r')
@@ -72,7 +74,7 @@ class main:
         ## Get list of sources, expanding dirs if necessary
         sources = config.get('sources')
         print('sources:',sources)
-        self.sourcelist, self.itemlist = get_fd_items(sources,['*.sql'])
+        self.sourcelist, self.itemlist = get_fd_items(sources,['*.sql','*.ftr'])
          ## Pull source data into foci in run directory
         getsources(self.sourcelist)
 
@@ -227,7 +229,7 @@ def derproc(self,inp,out,fdl):
 
 def copyproc(self,ffrom,to):
 
-    qscopy(rundirsub+'//'+ffrom, to)
+    qscopy(rundirsub+'//'+ffrom, to+'.ftr')
 
 
 def aggproc(self,inp,out,tml):
@@ -319,7 +321,13 @@ def getsql(sql):
 
 
 def getftr(ftr):
-    pass
+    name = os.path.splitext(os.path.basename(ftr))[0]
+
+    if not os.path.isfile(rundirsub+'//'+name+'.ftr'):
+        qscopy(ftr,rundirsub+'//'+name+'.ftr',force='true')
+    else:
+        print(name+'.ftr'+' already exists...')
+
 
 
 def gettxt(txt):
@@ -330,7 +338,7 @@ def gettxt(txt):
 
 def runqsdb(command, args):
 
-    qshome='C:/PortraitMiner/server/qs7.0B/win64/bin/'
+    qshome='C:\\PortraitMiner7.0B\\server\\qs7.0B\\win32\\bin\\'
     print('EXECUTING',qshome+command,[command]+args)
     result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
     return result
@@ -349,7 +357,7 @@ def qscopy(ffrom,to,force=None):
         if eval(arg):
             args.extend(['-'+arg])
 
-    runqsdb('qscopy.exe', args)
+    runqsdb('qscopy', args)
 
 
 def qsimportdb(udc,sql,output,fields=None,xfields=None,force=None):
