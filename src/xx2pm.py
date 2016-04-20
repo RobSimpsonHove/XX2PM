@@ -26,7 +26,6 @@ from shutil import copyfile
 import configparser
 
 
-
 qshome='C:\\PortraitMiner7.0B\\server\\qs7.0B\\win32\\bin\\'
 
 ## Set timestamps
@@ -146,14 +145,15 @@ def executetasklist(self):
             #base=os.path.basename(source)    # file.txt
             #name=os.path.splitext(base)[0]   # file
 
-            print('Calling gpf:',self.tasklist,rundirsub,name,step)
+            #print('Calling gpf:',self.tasklist,rundirsub,name,step)
             prevname=get_previous_focus(self.tasklist,rundirsub,name,step)
-            print('Building on',prevname)
+            #print('Building on',prevname)
 
             value = config.get( name + '.' + step)
 
             if value==None:
-                print('No such ',name + '.' + step)
+                pass
+                #print('No such ',name + '.' + step)
                 
             else:
                 inp=prevname
@@ -267,7 +267,7 @@ def aggproc(self,inp,out,tml):
 
 
 
-def joinproc(self,inp,out,rhs):
+def joinprocOld(self,inp,out,rhs):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
 
@@ -276,15 +276,45 @@ def joinproc(self,inp,out,rhs):
         keys = config.get(name + '.keys',config.get('.keys'))
 
         if keys!=None:
+            raise Exception('No key set for ',name)
 
-            rhsfocus=rhs.split('.')[0]
+        rhsfocus=rhs.split('.')[0]
+        if(len(rhs.split('.')))==2:
             rhsfields=rhs.split('.')[1]
-            if rhsfields=='*':
+        else:
+            rhsfields=None
+
+        qsjoinplus(rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',rundirsub+'//'+rhsfocus,fields=rhsfields)
+
+    else:
+        print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
+
+def joinproc(self,inp,out,rhs):
+
+    if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
+
+        name=os.path.splitext(inp)[0]
+
+        keys = config.get(name + '.keys',config.get('.keys'))
+        print('name is',name)
+        if keys==None:
+            raise Exception('No key set for ',name)
+
+        rhscount=len(rhs.split(';'))
+
+        for j in rhs.split(';'):
+
+            rhsfocus=j.split('.')[0]
+            if(len(j.split('.')))==2: ## fieldnames exist
+                rhsfields=j.split('.')[1]
+            else:
                 rhsfields=None
 
-            qsjoinplus(rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',rundirsub+'//'+rhsfocus,fields=rhsfields)
-        else:
-            print('No key set for ',name)
+            if j==rhs.split(';')[0]:
+                qsjoinplus(rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',rundirsub+'//'+rhsfocus,fields=rhsfields)
+            else:
+                qsjoinplus(rundirsub+'//'+out, keys, rundirsub+'//'+out+'.ftr',rundirsub+'//'+rhsfocus,fields=rhsfields)
+
     else:
         print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
 
@@ -340,12 +370,23 @@ def gettxt(txt):
 
 ############### QSDBC's #######################################################
 
-def runqsdb(command, args):
+def runqsdbOld(command, args):
 
-    qshome='C:\\PortraitMiner7.0B\\server\\qs7.0B\\win32\\bin\\'
     print('EXECUTING',qshome+command,[command]+args)
     result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
     return result
+
+
+def runqsdb(command, args):
+
+    print('EXECUTING',qshome+command,[command]+args)
+    command2=qshome+command
+    for a in args:
+        command2=command2+' '+a
+    print(command2)
+    os.system(command2)
+    #result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
+    return 0
 
 
 def qscopy(ffrom,to,force=None):
