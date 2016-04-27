@@ -25,34 +25,46 @@ import glob
 from shutil import copyfile
 import configparser
 
+import argparse
 
-qshome='C:\\PortraitMiner7.0B\\server\\qs7.0B\\win32\\bin\\'
+parser = argparse.ArgumentParser(description='This is a Miner databuild template')
+parser.add_argument('-d','--dir', help='Run directory',required=False)
+parser.add_argument('-p','--param',help='Build parameters', required=True)
+args = parser.parse_args()
+args.dir='20160421-161226'
+
+qshome='C:/PortraitMiner7.0B/server/qs7.0B/win32/bin/'
 
 ## Set timestamps
 now = time.strftime("%Y%m%d-%H%M%S")
 today = time.strftime("%Y%m%d")
 
 ## Set and create run directories
-rundir = sys.argv[2]
-rundirsub=rundir + '//' + now
-if not os.path.exists(rundir):
-    os.makedirs(rundir)
+print(args.dir, args.param)
+
+rundirroot = '../rundirs'
+if args.dir:
+    rundirsub=os.path.abspath(rundirroot + '/' + args.dir)
+else:
+    rundirsub=os.path.abspath(rundirroot + '/' + now)
+
+if not os.path.exists(rundirroot):
+    os.makedirs(rundirroot)
 if not os.path.exists(rundirsub):
     os.makedirs(rundirsub)
-rundirsub=os.path.abspath(rundirsub)
-import time
-time.sleep(2)
 
 ## Replace token in tempfile
-f = open(sys.argv[1],'r')
+f = open(args.param,'r')
 origtemplate = f.read()
 f.close()
+
 template = origtemplate.replace("$today",today)
 template = template.replace("$now",now)
 print(template)
 f = open(rundirsub+'/template.properties','w', encoding='utf-8')
 f.write(template)
 f.close()
+
 
 c=configparser.ConfigParser()
 c.optionxform=str
@@ -61,8 +73,8 @@ with codecs.open(rundirsub+'/template.properties', 'r', encoding='utf-8') as f:
 config=dict(c.items('xx2pm'))
 print(config)
 
-
-
+x = config.get('der.B')
+print('splitline',x)
 
 #rundirsub='C:/Users/PBDIA00022/PycharmProjects/XX2PM/mango/20160316-135357'
 #parser = configparser.ConfigParser()
@@ -77,7 +89,7 @@ class main:
         ## Get list of sources, expanding dirs if necessary
         sources = config.get('sources')
         print('sources:',sources)
-        self.sourcelist, self.itemlist = get_fd_items(sources,['*.sql','*.ftr'])
+        self.sourcelist, self.itemlist = get_search_items(sources, ['.sql', '.ftr'])
          ## Pull source data into foci in run directory
         getsources(self.sourcelist)
 
@@ -87,42 +99,52 @@ class main:
         executetasklist(self)
 
 
-def get_fd_items(filesOrDirs,extensions):
-    ## extensions = ("*.pgn","*.jpg","*.jpeg",)
-    print('FileOrDirs',filesOrDirs, extensions)
-    sourcelist = []
+def get_search_items(filesOrDirs, extensions):
+    ## extensions = (".qsfm","*.jpg","*.jpeg",)
+    itemlist = []
 
     for item in filesOrDirs.split(','):
-        print('Split item ####:',item)
-        if os.path.isdir(item):
-            print('Checking dir',item)
-            list = []
-            for extension in extensions:
-                list.extend(glob.glob(item+'/'+extension))
-            sourcelist.extend(list)
-        else:
-            sourcelist.append(item)
-    print('sourcelist:',sourcelist)
+        print('Search item',item)
+        base,_,_=stem(item)
 
-    itemlist = []
-    for item in sourcelist:
-        itemlist.append(stem(item))
+        ## Search locally in rundir if no path given
+        if base==item:
+            item=rundirsub+'/'+item
 
-    print('itemlist:',itemlist)
-    return sourcelist, itemlist
+        print('Checking dir',item)
+        list = []
+        _,name,suffix=stem(item)
+        for extension in extensions:
+            if suffix==extension:
+                search=item
+            else:
+                search=item+extension
+
+            print('looking for pattern:',search)
+            list.extend(glob.glob(search))
+        itemlist.extend(list)
+    print('Found items:',itemlist)
+
+    namelist = []
+    for item in itemlist:
+        _,name,_=stem(item)
+
+        namelist.append(name)
+
+    return itemlist, namelist
 
 
 def get_previous_focus(tasklist, path, name, currentstep):
-    print(tasklist[0])
+
     if currentstep==tasklist[0]:
         return name+".ftr"
     else:
         prior=False
         for step in reversed(tasklist):
             if prior:
-                file=glob.glob(path+"//"+name+"*"+step+"."+"*")
+                file=glob.glob(path+"//"+name+"_*"+"_"+step+".ftr")
                 if file:
-                    file=glob.glob(path+"//"+name+"*"+step+"."+"*")[0]
+                    file=file[0]
                     return os.path.basename(file)
             elif step==currentstep:
                 prior=True
@@ -131,14 +153,17 @@ def get_previous_focus(tasklist, path, name, currentstep):
 
 
 def stem(fullpathfilename):
-    base=os.path.basename(fullpathfilename)    # file.txt
-    name=os.path.splitext(base)[0]   # file
-    return name
+                                                # C:/mydir/bdir/file.txt
+    base=os.path.basename(fullpathfilename)     # file.txt
+    name=os.path.splitext(base)[0]              # file
+    suffix=os.path.splitext(base)[1]
+    return base,name,suffix
 
 
 def executetasklist(self):
 
-    for step in self.tasklist:
+    for task in self.tasklist:
+        print('Task:', task)
         for name in self.itemlist:
             #print('SOURCE',source)                                 # source: C:/a/b/c/file.txt
             #path=rundirsub    # C:/a/b/c/
@@ -146,67 +171,85 @@ def executetasklist(self):
             #name=os.path.splitext(base)[0]   # file
 
             #print('Calling gpf:',self.tasklist,rundirsub,name,step)
-            prevname=get_previous_focus(self.tasklist,rundirsub,name,step)
+            prevname=get_previous_focus(self.tasklist,rundirsub,name,task)
             #print('Building on',prevname)
 
-            value = config.get( name + '.' + step)
-
+            value = config.get( task + '.' + name)
+            print(task,name,value)
             if value==None:
                 pass
-                #print('No such ',name + '.' + step)
-                
             else:
+                print('DOING ',task + '.' + name,'=', value)
                 inp=prevname
-                out=stem(prevname)+'_'+step
+                _,out,_=stem(prevname)
+                out=out+'_'+task
 
-                if re.search('^der',step):
+                if re.search('^der',task):
                     derproc(self,inp,out,fdl=value)
-                elif re.search('^agg',step):
+                elif re.search('^agg',task):
                     aggproc(self,inp,out,tml=value)
-                elif re.search('^join',step):
+                elif re.search('^join',task):
                     joinproc(self,inp,out,rhs=value)
-                elif re.search('^metain',step):
+                elif re.search('^metaN',task):
+                    metaNproc(self,inp,out,meta=value)
+                elif re.search('^metax',task):
+                    metaxproc(self,inp,meta=value)
+                elif re.search('^meta',task):
                     metaproc(self,inp,out,meta=value)
-                elif re.search('^metaout',step):
-                    metaoutproc(self,inp,out,meta=value)
-                elif re.search('^copy',step):
+                elif re.search('^copy',task):
                     copyproc(self,inp,to=value)
                 #elif re.search('^cmd',step):
                 #    cmdproc(self,inp,out,meta=value)
-                elif re.search('^fin',step):
-                    finproc(self,step)
+                elif re.search('^fin',task):
+                    finproc(self,task)
+                else:
+                    raise Exception('Task',task,'not a supported task')
 
 
-def metaproc(self,inp,out,meta):
-
-    if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
-
-        print('Really doing metadata  ' + meta + ' for ' + inp +' to ' + out +'...')
-
-        qsfmlist, itemlist = get_fd_items(meta,['*.qsfm'])
-        for i in range(len(qsfmlist)):
-            qsfm=qsfmlist[i]
-            item=itemlist[i]
-            print('Q,I',qsfm,item, len(qsfmlist))
-            copyfile(qsfm, rundirsub+'//'+item+'.qsfm')
-
-            if len(qsfmlist)==1:     # If only one metadatfile, no need for metadata naming
-                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'.qsfm', rundirsub+'//'+out+'.ftr',warn='true')
-            else:
-                qsimportmetadata(rundirsub+'//'+inp, rundirsub+'//'+item+'.qsfm', rundirsub+'//'+out+'_'+item+'.ftr',warn='true')
-
-    else:
-        print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
+def metaxproc(self,inp,meta):
+    _,name,_=stem(inp)
+    qsexportmetadata(rundirsub+'//'+inp, rundirsub+'//'+name+'_'+meta+'.qsfm')
 
 
-def metaproc(self,inp,out,meta):
+def metaNproc(self,inp,out,meta):
+    metaproc(self,inp,out,meta,Nway=True)
 
-    if not os.path.isfile(rundirsub+'//'+inp+'.qsfm'):
+def metaproc(self,inp,out,meta,Nway=False):
 
-        qsexportmetadata(rundirsub+'//'+inp, rundirsub+'//'+inp+'.qsfm')
+    qsfmlist, namelist = get_search_items(meta, ['.qsfm'])
+    lastout=None
+    for i in range(len(qsfmlist)):
+        qsfm=qsfmlist[i]
+        name=namelist[i]
+        if os.path.dirname(qsfm) != rundirsub:
+                copyfile(qsfm, rundirsub+'//'+name+'.qsfm')
 
-    else:
-        print('Not overwriting', rundirsub+'//'+inp+'.qsfm','already exists')
+        thisin,thisout=sequence(Nway,inp,out,i,namelist)
+        print('this:',thisin,thisout)
+        qsimportmetadata(rundirsub+'/'+thisin, rundirsub+'/'+name+'.qsfm', rundirsub+'/'+thisout, warn='true')
+
+
+def sequence(Nway,inp,out,i,namelist):
+    name=namelist[i]
+    last=namelist[-1]
+    if Nway:    #   One output per parameter: e.g. metadata scoring to multiple files
+        infile=inp
+        outfile=out+'_'+name+'.ftr'
+    else:       #   One output total: e.g. serial applications of metadata
+        if i==0:                    ## first input to name
+            infile=inp
+            outfile=out+'_'+name+'.ftr'
+            lastout=outfile
+        elif name!=last :           ## middle input from previous to name
+            infile=out+'_'+namelist[i-1]
+            outfile=out+'_'+name+'.ftr'
+        else:                       ## last input from previous to out
+            infile=out+'_'+namelist[i-1]
+            outfile=out+'.ftr'
+
+    return  infile,outfile
+
+
 
 
 
@@ -214,7 +257,6 @@ def derproc(self,inp,out,fdl):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
 
-        print('Really doing derivations  ' + fdl + ' for ' + inp +' to ' + out +'...')
         ## Make local copy of fdl
         if not os.path.isfile(fdl):
             print('fdl',fdl)
@@ -249,7 +291,7 @@ def aggproc(self,inp,out,tml):
 
              ## Make local copy of tml
             if not os.path.isfile(tml):
-                print('fdl',tml)
+                print('tml',tml)
                 tmlfile=rundirsub+'//'+out+'_.tml'
                 f = open(tmlfile, 'w')
                 f.write(tml)
@@ -257,7 +299,8 @@ def aggproc(self,inp,out,tml):
             else:
                 copyfile(tml, rundirsub+'//'+out+'_.tml')
 
-            qsmeasure(rundirsub+'//'+out+'_.tml', rundirsub+'//'+inp, rundirsub+'//'+out+'.ftr', keys)
+            input=qssortfix(rundirsub+'//'+inp,keys)
+            qsmeasure(rundirsub+'//'+out+'_.tml', input, rundirsub+'//'+out+'.ftr', keys)
 
         else:
                 print('No key set for ',name)
@@ -289,6 +332,7 @@ def joinprocOld(self,inp,out,rhs):
     else:
         print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
 
+
 def joinproc(self,inp,out,rhs):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
@@ -315,8 +359,18 @@ def joinproc(self,inp,out,rhs):
             else:
                 qsjoinplus(rundirsub+'//'+out, keys, rundirsub+'//'+out+'.ftr',rundirsub+'//'+rhsfocus,fields=rhsfields)
 
-    else:
-        print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
+
+#   itemlist, namelist = get_fd_items(meta,['*.qsfm'])
+#   lastout=None
+#   for i in range(len(itemlist)):
+#       qsfm=itemlist[i]
+#       name=namelist[i]
+#       copyfile(qsfm, rundirsub+'//'+name+'.qsfm')
+
+#       thisin,thisout=sequence(Nway,inp,out,i,namelist)
+#       print('this:',thisin,thisout)
+#       qsimportmetadata(rundirsub+'/'+thisin, rundirsub+'/'+name+'.qsfm', rundirsub+'/'+thisout, warn='true')
+
 
 
 def getsources(sourcelist):
@@ -324,6 +378,8 @@ def getsources(sourcelist):
             #source=os.path.splitext(os.path.basename(source))[0]
 
             name=os.path.splitext(os.path.basename(source))[0]
+            if '_' in name:
+                raise Exception('UNDERSCORE IN SOURCE NAME '+name)
             suffix=os.path.splitext(os.path.basename(source))[1]
 
             print('Fetching ', name, suffix, source)
@@ -370,20 +426,23 @@ def gettxt(txt):
 
 ############### QSDBC's #######################################################
 
-def runqsdbOld(command, args):
+def runqsdbUsual(command, args, failonbad=True):
 
     print('EXECUTING',qshome+command,[command]+args)
     result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
+    #print('Result',result)
+    if result==1 and failonbad:
+            raise Exception( command+' failed for ',args)
     return result
 
 
-def runqsdb(command, args):
+def runqsdb(command, args, failonbad=True):
 
-    print('EXECUTING',qshome+command,[command]+args)
+
     command2=qshome+command
     for a in args:
         command2=command2+' '+a
-    print(command2)
+    print('EXECUTING in os.system:',command2)
     os.system(command2)
     #result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
     return 0
@@ -489,12 +548,30 @@ def qsimportmetadata(input, metadata, output=None, fields=None, warn=None):
     runqsdb("qsimportmetadata.exe", args)
 
 
+def qsexportmetadata(input, metadata):
+
+    args=[]
+    args.extend(['-input',input,'-output',metadata])
+
+    for arg in []:
+        if eval(arg):
+            args.extend(['-'+arg,eval(arg)])
+
+    for arg in []:
+        if eval(arg):
+            args.extend(['-'+arg])
+
+    runqsdb("qsexportmetadata.exe", args)
+
+
 def qssortfix(input,keys):
 
-        result=runqsdb("qssort.exe", ['-check -input '+input+' -keys '+keys])
+        sorted=os.path.splitext(input)[0]+'__s.ftr'
+        if os.path.isfile(rundirsub+'//'+sorted):
+            return sorted
 
+        result=runqsdb("qssort.exe", ['-check -input '+input+' -keys '+keys],False)
         if result==1:
-            sorted=os.path.splitext(input)[0]+'__s.ftr'
             runqsdb("qssort.exe", ['-input '+input+' -keys '+keys+' -output '+sorted])
             input=sorted
 
