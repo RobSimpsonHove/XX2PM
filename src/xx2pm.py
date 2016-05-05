@@ -24,6 +24,8 @@ import codecs
 import glob
 from shutil import copyfile
 import configparser
+import xml.etree.ElementTree as ET
+
 
 import argparse
 
@@ -31,7 +33,7 @@ parser = argparse.ArgumentParser(description='This is a Miner databuild template
 parser.add_argument('-d','--dir', help='Run directory',required=False)
 parser.add_argument('-p','--param',help='Build parameters', required=True)
 args = parser.parse_args()
-args.dir='20160421-161226'
+#args.dir='20160421-161226'
 
 qshome='C:/PortraitMiner7.0B/server/qs7.0B/win32/bin/'
 
@@ -73,8 +75,6 @@ with codecs.open(rundirsub+'/template.properties', 'r', encoding='utf-8') as f:
 config=dict(c.items('xx2pm'))
 print(config)
 
-x = config.get('der.B')
-print('splitline',x)
 
 #rundirsub='C:/Users/PBDIA00022/PycharmProjects/XX2PM/mango/20160316-135357'
 #parser = configparser.ConfigParser()
@@ -156,7 +156,7 @@ def stem(fullpathfilename):
                                                 # C:/mydir/bdir/file.txt
     base=os.path.basename(fullpathfilename)     # file.txt
     name=os.path.splitext(base)[0]              # file
-    suffix=os.path.splitext(base)[1]
+    suffix=os.path.splitext(base)[1]            # txt
     return base,name,suffix
 
 
@@ -176,7 +176,7 @@ def executetasklist(self):
 
             value = config.get( task + '.' + name)
             print(task,name,value)
-            if value==None:
+            if value is None:
                 pass
             else:
                 print('DOING ',task + '.' + name,'=', value)
@@ -185,7 +185,7 @@ def executetasklist(self):
                 out=out+'_'+task
 
                 if re.search('^der',task):
-                    derproc(self,inp,out,fdl=value)
+                    derproc(self,inp,out,task,fdl=value)
                 elif re.search('^agg',task):
                     aggproc(self,inp,out,tml=value)
                 elif re.search('^join',task):
@@ -253,21 +253,66 @@ def sequence(Nway,inp,out,i,namelist):
 
 
 
-def derproc(self,inp,out,fdl):
+def derproc(self,inp,out,task,fdl):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
 
         ## Make local copy of fdl
+        fdlfile=rundirsub+'//'+out+'_.fdl'
         if not os.path.isfile(fdl):
             print('fdl',fdl)
-            fdlfile=rundirsub+'//'+out+'_.fdl'
             f = open(fdlfile, 'w')
             f.write(fdl)
             f.close()
         else:
-            copyfile(fdl, rundirsub+'//'+out+'_.fdl')
+            copyfile(fdl, fdlfile)
 
-        qsderive(rundirsub+'//'+out+'_.fdl', rundirsub+'//'+inp, rundirsub+'//'+out+'.ftr')
+        var = config.get(task+'.var')
+        if var is not None:
+
+            trim = config.get(task+'.trim')
+            if trim is not None:
+                if type(trim) is tuple:
+                    print('TUPLE')
+                    regex=trim[0]
+                    replace=trim[1]
+                else:
+                    regex=trim
+                    replace=''
+            else:
+                regex='dummy'
+                replace='dummy'
+
+            print(regex,replace)
+
+            fields=getmatchingfields(rundirsub+'//'+inp,var)
+            print('FIELDS!!:',fields)
+            fdlfile_2=rundirsub+'//'+out+'_2.fdl'
+
+            fout = open(fdlfile_2,'w')
+
+            with open(fdlfile, 'rU') as fin:
+                for line in fin:
+                    if not(re.search('nvl',line)):
+                        print('#',line)
+                        fout.write(line)
+            fout.write('\n')
+            for field in fields:
+                if trim is not None:
+                    field=re.sub(regex,replace,field)
+
+                with open(fdlfile, 'rU') as fin:
+                    for line in fin:
+                        if re.search('\$var',line):
+                            print(re.sub('\$var',field,line))
+                            fout.write(re.sub('\$var',field,line))
+
+            fin.close()
+            fout.close()
+            fdlfile=fdlfile_2
+
+
+        qsderive(fdlfile, rundirsub+'//'+inp, rundirsub+'//'+out+'.ftr')
 
     else:
         print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
@@ -287,7 +332,7 @@ def aggproc(self,inp,out,tml):
         keys = config.get(name + '.keys',config.get('.keys'))
         library = config.get(name + '.library',config.get('.library'))
 
-        if keys!=None:
+        if keys is not None:
 
              ## Make local copy of tml
             if not os.path.isfile(tml):
@@ -318,7 +363,7 @@ def joinprocOld(self,inp,out,rhs):
 
         keys = config.get(name + '.keys',config.get('.keys'))
 
-        if keys!=None:
+        if keys is not None:
             raise Exception('No key set for ',name)
 
         rhsfocus=rhs.split('.')[0]
@@ -341,7 +386,7 @@ def joinproc(self,inp,out,rhs):
 
         keys = config.get(name + '.keys',config.get('.keys'))
         print('name is',name)
-        if keys==None:
+        if keys is None:
             raise Exception('No key set for ',name)
 
         rhscount=len(rhs.split(';'))
@@ -402,7 +447,7 @@ def getsql(sql):
 
         udc = config.get(name+'.udc',config.get('.udc'))
         print(udc)
-        if udc!=None:
+        if udc is not None:
             qsimportdb(udc,sql,rundirsub+'//'+name,force='true')
         else:
             print('UDC not found for ',name)
@@ -436,11 +481,11 @@ def runqsdbUsual(command, args, failonbad=True):
     return result
 
 
-def runqsdb(command, args, failonbad=True):
-
+def runqsdb(command, arglist, failonbad=True):
+    print('args', arglist)
 
     command2=qshome+command
-    for a in args:
+    for a in arglist:
         command2=command2+' '+a
     print('EXECUTING in os.system:',command2)
     os.system(command2)
@@ -597,6 +642,81 @@ def qsmeasureplus(aggregations, input, output, keys, fields=None, xfields=None, 
     qsmeasure(aggregations, input, output, keys, fields, xfields, force)
 
 
+#main()
+
+
+import csv
+
+def foo(a,b):
+    print(a)
+    print(b)
+
+
+import csv
+
+def getfocusfieldsOld(focus):
+    _,name,_ = stem(focus)
+    runqsdb('qsdescribe',['-input', focus, '-fields', '-output', rundirsub+name+'__fields.txt'])
+    fields={}
+
+    reader = csv.reader(open(rundirsub+name+'__fields.txt', 'r'))
+    for row in reader:
+        try:
+            x=row[0].split()
+            dummy=int(x[0])   ##  First element is a number
+            print(x )
+            fields[x[1]] = {'seq':x[0], 'type':x[2], 'interps':x[3]}
+        except:
+                pass
+    return fields
+
+def getfocusfields(focus):
+    _,name,_ = stem(focus)
+    runqsdb('qsexportmetadata',['-input', focus, '-output', rundirsub+'//'+name+'.qsfm'])
+    fields=[]
+    fielddict={}
+
+
+    tree = ET.parse(rundirsub+'//'+name+'.qsfm')
+    doc = tree.getroot()
+    for a in doc.findall('{http://www.quadstone.com/xml}field'):
+        fieldname=a.get('name')
+        fieldtype=a.get('type')
+        print(fieldname,fieldtype)
+        fields.append(fieldname)
+        fielddict[fieldname] = {'type':fieldtype}
+    return fields, fielddict
+
+
+
+def getmatchingfields(focus,patterns):
+    fields, fielddict=getfocusfields(focus)
+    matchingfields=[]
+    for p in patterns.split(','):
+        p=p.strip()
+        t=None
+        if ':' in p:
+            t=p.split(':')[1]
+            p=p.split(':')[0]
+
+        notregex=len(re.sub("[a-zA-Z0-9_]","",p))==0
+        p='^'+p+'$'
+        latestmatchingfields=[]
+        for f in fields:
+            if re.match(p,f,re.IGNORECASE) and (t==None or re.match(t,fielddict[f]['type'],re.IGNORECASE)):
+                latestmatchingfields.append(f)
+        if latestmatchingfields==[]:
+            print("WARNING: field ",p,"not found in",focus)
+        matchingfields.extend(latestmatchingfields)
+    dedupematchingfields=[]
+    for i in matchingfields:
+        if i not in dedupematchingfields:
+            dedupematchingfields.append(i)
+    return matchingfields
 
 
 main()
+#print(re.sub('create *([A-Za-z0-9_()\.\*]*).*','\\1',n))
+
+#var=
+
