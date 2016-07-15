@@ -16,6 +16,8 @@
 
 ## $today YYYYMMDD, $now YYYYMMDD-HHMMSS
 
+explicit_foci=False
+
 import os
 import sys
 import re
@@ -40,6 +42,7 @@ args = parser.parse_args()
 now = time.strftime("%Y%m%d-%H%M%S")
 today = time.strftime("%Y%m%d")
 
+
 ## Set and create run directories
 print(args.dir, args.param)
 
@@ -61,6 +64,7 @@ f.close()
 
 template = origtemplate.replace("$today", today)
 template = template.replace("$now", now)
+template = template.replace("$rundir", rundirsub)
 print(template)
 f = open(rundirsub + '/template.properties', 'w', encoding='utf-8')
 f.write(template)
@@ -96,7 +100,7 @@ class main:
         executetasklist(self)
 
 
-def get_search_items(filesOrDirs, extensions):
+def get_search_items(filesOrDirs, allowed_extensions):
     ## extensions = (".qsfm","*.jpg","*.jpeg",)
     itemlist = []
 
@@ -111,7 +115,7 @@ def get_search_items(filesOrDirs, extensions):
         print('Checking dir', item)
         list = []
         _, name, suffix = stem(item)
-        for extension in extensions:
+        for extension in allowed_extensions:
             if suffix == extension:
                 search = item
             else:
@@ -119,13 +123,13 @@ def get_search_items(filesOrDirs, extensions):
 
             print('looking for pattern:', search)
             list.extend(glob.glob(search))
+
         itemlist.extend(list)
     print('Found items:', itemlist)
 
     namelist = []
     for item in itemlist:
         _, name, _ = stem(item)
-
         namelist.append(name)
 
     return itemlist, namelist
@@ -133,8 +137,16 @@ def get_search_items(filesOrDirs, extensions):
 
 def get_previous_focus(tasklist, path, name, currentstep):
     print('GPF tasklist',tasklist,'name',name,'step',currentstep)
-    if currentstep == tasklist[0]:
+    if re.search('\.ftr',name):
+
+        print('Explicit',name)
+        return name
+
+    if currentstep == tasklist[0]: # If first task...
+        print('First task', name)
         return name + ".ftr"
+
+
     else:
         prior = False
         for step in reversed(tasklist):
@@ -161,27 +173,44 @@ def stem(fullpathfilename):
 def executetasklist(self):
     for task in self.tasklist:
         print('Task:', task)
+
         for name in self.itemlist:
-            # print('SOURCE',source)                                 # source: C:/a/b/c/file.txt
-            # path=rundirsub    # C:/a/b/c/
-            # base=os.path.basename(source)    # file.txt
-            # name=os.path.splitext(base)[0]   # file
+            print('name',name)
+            value=None
+            prevname=None
 
-            # print('Calling gpf:',self.tasklist,rundirsub,name,step)
-            prevname = get_previous_focus(self.tasklist, rundirsub, name, task)
-            #prevname = name
+            foci=glob.glob(rundirsub + "//" + name+'*.ftr')  # Existing foci
+            print('foci',foci)
+            for f in foci:
+                print('focus',f)
+                fbase=os.path.basename(f)
 
-            print('Building on',prevname)
+                print('focus2',fbase)
+                value = config.get(task + '.' + fbase)      # Is there a config for this focus
+                print('TNV', task, fbase, value)
+                if value:
+                    prevname=fbase
+                    break
 
-            value = config.get(task + '.' + name)
-            print('TNV', task, name, value)
+            if not value:
+                value = config.get(task + '.' + name) or config.get(task)
+                print('TNV2', task, name, value)
+
             if value is None:
                 pass
             else:
+                # print('Calling gpf:',self.tasklist,rundirsub,name,step)
+                if not prevname:
+                    prevname = get_previous_focus(self.tasklist, rundirsub, name, task)
+
+
+                print('Building on', prevname)
                 print('DOING ', task + '.' + name, '=', value)
+
                 inp = prevname
-                _, out, _ = stem(prevname)
-                out = out + '_' + task
+                #_, out, _ = stem(prevname) #base, name, suffix
+                #out = out + '_' + task
+                out = name + '_' + task
 
                 if re.search('^der', task):
                     derproc(self, inp, out, task, fdl=value)
@@ -201,8 +230,27 @@ def executetasklist(self):
                 #    cmdproc(self,inp,out,meta=value)
                 elif re.search('^fin', task):
                     finproc(self, task)
+                elif re.search('^score', task):
+                    scoreproc(self, task, focipattern=value)
                 else:
                     raise Exception('Task', task, 'not a supported task')
+
+
+def scoreproc(self,task,focipattern):
+    print('pattern',focipattern)
+    focilist, dummy = get_search_items(focipattern, ['.ftr'])
+    print('focilist',focilist)
+    for focus in focilist:
+        print('Scoring focus',focus)
+        base,name,suffix=stem(focus)
+        scorename=re.sub('.*_','',name)
+        print('scorename',scorename)
+        custid = config.get(task + '.custid') or config.get('.custid')
+        f = open(rundirsub + '//' + scorename+'.fdl', 'w')
+        f.write('create scorename := "'+scorename+'"; create scoredatetime := now();')
+        f.close()
+        qsderive(rundirsub + '//' + scorename+'.fdl', focus)
+        fields='custid,scorename,scoredatetime,scorename'
 
 
 def metaxproc(self, inp, meta):
@@ -211,10 +259,10 @@ def metaxproc(self, inp, meta):
 
 
 def metaNproc(self, inp, out, meta):
-    metaproc(self, inp, out, meta, Nway=True)
+    metaproc(self, inp, out, meta, Parallel=True)
 
 
-def metaproc(self, inp, out, meta, Nway=False):
+def metaproc(self, inp, out, meta, Parallel=False):
     qsfmlist, namelist = get_search_items(meta, ['.qsfm'])
     lastout = None
     for i in range(len(qsfmlist)):
@@ -222,17 +270,17 @@ def metaproc(self, inp, out, meta, Nway=False):
         name = namelist[i]
         if os.path.dirname(qsfm) != rundirsub:
             copyfile(qsfm, rundirsub + '//' + name + '.qsfm')
-
-        thisin, thisout = sequence(Nway, inp, out, i, namelist)
+        print('Sequence, ', Parallel, inp, out, i, namelist)
+        thisin, thisout = sequence_meta(Parallel, inp, out, i, namelist)
         print('this:', thisin, thisout)
         qsimportmetadata(rundirsub + '/' + thisin, rundirsub + '/' + name + '.qsfm', rundirsub + '/' + thisout,
                          warn='true')
 
 
-def sequence(Nway, inp, out, i, namelist):
+def sequence_meta(Parallel, inp, out, i, namelist):
     name = namelist[i]
     last = namelist[-1]
-    if Nway:  # One output per parameter: e.g. metadata scoring to multiple files
+    if Parallel:  # One output per parameter: e.g. metadata scoring to multiple files
         infile = inp
         outfile = out + '_' + name + '.ftr'
     else:  # One output total: e.g. serial applications of metadata
@@ -595,7 +643,7 @@ def qssortfix(input, keys):
         return sorted
 
     result = runqsdb("qssort.exe", ['-check -input ' + input + ' -keys ' + keys], False)
-    print('SORT RESULT', result)
+    print('SORT RESULT', result, ', Ignore Error above, we\'ll deal with it.')
     if result == 1:
         runqsdb("qssort.exe", ['-input ' + input + ' -keys ' + keys + ' -output ' + sorted])
         input = sorted
