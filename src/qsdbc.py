@@ -22,6 +22,19 @@ def qsimportdb(udc,sql,output,fields=None,xfields=None,force=None):
     runqsdb('qsimportdb.exe', args)
 
 
+def qsdbinsert(input,udc,table,fields=None,xfields=None):
+
+    args=[]
+    args.extend(['-input',input,'-udc',udc,'-table',table])
+
+    for arg in ['fields','xfields']:
+        if eval(arg):
+            args.extend(['-'+arg,eval(arg)])
+
+    print('args',args)
+    runqsdb('qsdbinsert.exe', args)
+
+
 def qsmeasure(aggregations, input, output, keys, fields=None, xfields=None, force=None):
 
     args=[]
