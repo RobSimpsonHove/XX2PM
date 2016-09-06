@@ -45,7 +45,8 @@ now = time.strftime("%Y%m%d-%H%M%S")
 today = time.strftime("%Y%m%d")
 
 ## Set and create run directories
-print(args.dir, args.param)
+print('ARGS.DIR:', args.dir)
+print('ARGS.PARAM:', args.param)
 
 rundirroot = '../rundirs'
 if args.dir:
@@ -201,7 +202,7 @@ def executetasklist(self):
                 if re.search('^der',task):
                     derproc(self,inp,out,task,fdl=value)
                 elif re.search('^agg',task):
-                    aggproc(self,inp,out,tml=value)
+                    aggproc(self,task,inp,out,tml=value)
                 elif re.search('^join',task):
                     joinproc(self,inp,out,task,rhs=value)
                 elif re.search('^metan',task):
@@ -419,7 +420,7 @@ def copyproc(self,ffrom,to):
 
 
 
-def aggproc(self,inp,out,tml):
+def aggproc(self,task,inp,out,tml):
 
     if not os.path.isfile(rundirsub+'//'+out+'.ftr'):
 
@@ -642,17 +643,16 @@ def gettxt(txt):
 
 ############### QSDBC's #######################################################
 
-def runqsdbUsual(command, args, failonbad=True):
+def runqsdb(command, args, failonbad=True):
 
-    print('EXECUTING',qshome+command,[command]+args)
-    result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
-    #print('Result',result)
+    print('EXECUTING',qshome+command,[qshome+command]+args)
+    result = os.spawnv(os.P_WAIT, qshome+command, [qshome+command]+args)
     if result==1 and failonbad:
-            raise Exception( command+' failed for ',args)
+            raise Exception( qshome+command,' failed for ',[command]+args)
     return result
 
 
-def runqsdb(command, arglist, failonbad=True):
+def runqsdbOther(command, arglist, failonbad=True):
     print('args', arglist)
 
     command2=qshome+command
@@ -660,8 +660,8 @@ def runqsdb(command, arglist, failonbad=True):
     for a in arglist:
         command2=command2+' '+a
     print('EXECUTING in os.system:',command2)
-    os.system(command2)
-    #result = os.spawnv(os.P_WAIT, qshome+command, [command]+args)
+    #os.system(command2)
+    result = os.spawnv(os.P_WAIT, qshome+command, command2)
     return 0
 
 
@@ -806,6 +806,7 @@ def qssortfix(input,keys):
             return sorted
 
         result=runqsdb("qssort.exe", ['-check -input '+input+' -keys '+keys],False)
+
         if result==1:
             runqsdb("qssort.exe", ['-input '+input+' -keys '+keys+' -output '+sorted])
             input=sorted
