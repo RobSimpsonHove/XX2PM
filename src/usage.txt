@@ -1,0 +1,45 @@
+
+## DOCUMENT
+## forward slashes only please!
+
+## tasks: der, agg, join, meta, copy
+## #####meta(N) task: file or dir, expands dir for *.qsfm
+
+## Fixed variables
+## $$today YYYYMMDD, $$now YYYYMMDD-HHMMSS
+
+
+## op is either provided or inferred
+
+keys=field1,field2    defaults to inherited from global .keys
+
+qsderive: der
+## Fieldname and variable expansion in fdl
+*in-input: focus, full path or local
+*der-derivations: inline or file
+out-output: focus (full path or local), defaults to taskname.fdl
+var: field and/or list variables
+trim: modify matching fieldnames
+
+
+qsmeasure: agg
+## Fieldname and variable expansion in fdl
+## Sorts if needed
+*in-input: focus, full path or local
+*agg-aggregations: inline or file
+out-output: focus (full path or local), defaults to taskname.fdl
+var: field and/or list variables
+keys: field1,field2  defaults to inherited from global .keys
+trim: modify matching fieldnames
+
+
+qsjoin: join
+*in-input: focus, full path or local
+*rhs-right-hand-side: focus or glob pattern
+keys: field1,field2  defaults to inherited from global .keys
+out-output: focus (full path or local), defaults to taskname.fdl
+keys: field1,field2  defaults to inherited from global .keys
+suffix: ?? currently only for offsets??
+except: ?? set to keys for rename
+offsets: ?? does?? -1,0,1,2,3  Inherits from .offsets
+

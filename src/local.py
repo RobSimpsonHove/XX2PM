@@ -1,4 +1,4 @@
 
-qshome='C:/PortraitMiner7.1/server/qs7.1/win64/bin/'
+qsbin='C:/PortraitMiner7.2/server/qs7.2/win64/bin/'
 postflag='_post'
 preflag='_pre'

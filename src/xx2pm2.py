@@ -10,6 +10,7 @@
 ##  TODO 'score' *.ftr to DB table
 ## TODO command line command
 ##  TODO What happens when splitting a thread: B, B_der, B_der_agg,
+## TODO var for fieldnames AND list of patterns
 
 ## DOCUMENT
 ## sources= ....  file or dir, expands dir for *.sql
@@ -19,7 +20,6 @@
 ## $today YYYYMMDD, $now YYYYMMDD-HHMMSS
 
 import os
-import sys
 import re
 import time
 import codecs
@@ -31,6 +31,9 @@ import datetime
 from dateutil.relativedelta import *
 import argparse
 import csv
+import logging
+logging.basicConfig(level=logging.DEBUG)  #DEBUG,INFO,WARNING,ERROR,CRITICAL
+
 exec(open('local.py').read())
 
 parser = argparse.ArgumentParser(description='This is a Miner databuild template')
@@ -39,95 +42,102 @@ parser.add_argument('-p','--param',help='Build parameters', required=True)
 args = parser.parse_args()
 #args.dir='20160421-161226'
 
-
 ## Set timestamps
 now = time.strftime("%Y%m%d-%H%M%S")
 today = time.strftime("%Y%m%d")
 
-## Set and create run directories
-print('ARGS.DIR:', args.dir)
-print('ARGS.PARAM:', args.param)
-
+# Create run directories
 rundirroot = '../rundirs'
 if args.dir:
     rundirsub=os.path.abspath(rundirroot + '/' + args.dir)
 else:
     rundirsub=os.path.abspath(rundirroot + '/' + now)
-
 if not os.path.exists(rundirroot):
     os.makedirs(rundirroot)
 if not os.path.exists(rundirsub):
     os.makedirs(rundirsub)
 
-## Replace token in tempfile
-f = open(args.param,'r')
-origtemplate = f.read()
-f.close()
 
-template = origtemplate.replace("$today",today)
-template = template.replace("$now",now)
-#print(template)
-f = open(rundirsub+'/template.properties','w', encoding='utf-8')
-f.write(template)
-f.close()
+## Print given arguments
+logging.debug('ARGS.PARAM:' +args.param)
 
+## Replace tokens in tempfile
+f1 = open(args.param, 'r')
+f2 = open(rundirsub+'/template.properties', 'w', encoding='utf-8')
+for line in f1:
+    line=line.replace('$today', today)
+    line=line.replace('$now', now)
+    f2.write(line)
+f1.close()
+f2.close()
 
+# Load template file
 c=configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
 c.optionxform=str
 with codecs.open(rundirsub+'/template.properties', 'r', encoding='utf-8') as f:
     c.read_file(f)
 config=dict(c.items('xx2pm'))
-print('Config File:')
-print(config)
-
-foo = config.get('foo')
-print('FOO',foo)
+#print('Config File:',config)
 
 
-class main:
-    def __init__(self):
+def globfoci(filepatterns):
+    itemlist = []
+    for filepattern in filepatterns.split(','):
+        logging.debug('Expanding item ' + filepattern)
+        base, _, _ = stem(filepattern)
 
-        ## Get list of sources, expanding dirs if necessary
-        sources = config.get('sources')
-        print('sources:',sources)
-        self.sourcelist, self.itemlist = get_search_items(sources, ['.sql', '.ftr'])
-         ## Pull source data into foci in run directory
-        getsources(self.sourcelist)
+        ## Search locally in rundir if no path given
+        if base == filepattern:
+            filepattern = rundirsub + '/' + filepattern
 
-        ## Run through task list
-        self.tasklist = config.get('tasklist').split(',')
-        print(self.tasklist)
-        executetasklist(self)
+        list = []
+        # Turn regex into glob pattern
+        filepattern = filepattern.replace('.*', '*')
+        filepattern = filepattern.replace('.ftr', '')
+        filepattern = filepattern+'.ftr'
+        logging.debug('looking for pattern:' + filepattern)
+        list.extend(glob.glob(filepattern))
+        itemlist.extend(list)
+    logging.debug('Found items: ' + str(itemlist))
+
+    #namelist = []
+    #for item in itemlist:
+    #    _, name, _ = stem(item)
+#
+    #   namelist.append(name)
+
+    return itemlist
 
 
 def get_search_items(filesOrDirs, extensions):
     ## extensions = (".qsfm","*.jpg","*.jpeg",)
-    itemlist = []
 
+    itemlist = []
     for item in filesOrDirs.split(','):
-        print('Search item',item)
+        logging.debug('Search item '+item)
         base,_,_=stem(item)
 
         ## Search locally in rundir if no path given
         if base==item:
             item=rundirsub+'/'+item
 
-        print('Checking dir',item)
+        logging.debug('Checking dir '+item)
+
         list = []
         _,name,suffix=stem(item)
+        print('suff',suffix)
         for extension in extensions:
             if suffix==extension:
                 search=item
             else:
                 search=item+extension
 
-
             # Turn regex into glob pattern
             search=search.replace('.*','*')
-            print('looking for pattern:',search)
+            logging.debug('looking for pattern:'+str(search))
             list.extend(glob.glob(search))
         itemlist.extend(list)
-    print('Found items:',itemlist)
+    logging.debug('Found items: '+str(itemlist))
 
     namelist = []
     for item in itemlist:
@@ -176,54 +186,75 @@ def stem(fullpathfilename):
     return base,name,suffix
 
 
+def jointest():
+    print('jointest')
+
+
+def dertest(self,task):
+    print('AMAZING dertest',task)
+    print(self.ops['der']['required'])
+
+
 def executetasklist(self):
 
     for task in self.tasklist:
-        print('Task:', task)
-        for name in self.itemlist:
-            #print('SOURCE',source)                                 # source: C:/a/b/c/file.txt
-            #path=rundirsub    # C:/a/b/c/
-            #base=os.path.basename(source)    # file.txt
-            #name=os.path.splitext(base)[0]   # file
+        logging.info('DOING '+task)
 
-            #print('Calling gpf:',self.tasklist,rundirsub,name,step)
-            prevname=get_previous_focus(self.tasklist,rundirsub,name,task)
-            #print('Building on',prevname)
+        operation = config.get(task + '.op')
+        if not operation:
+            # If operation not specified, can we infer: does it start with one of the op names?
+            for op in self.operations:
+                if re.match(op, task):
+                    operation=op
+                    break
 
-            value = config.get( task + '.' + name)
-            print('TNV:',task,name,value)
-            if value is None:
-                pass
-            else:
-                print('DOING ',task + '.' + name,'=', value)
-                inp=prevname
-                _,out,_=stem(prevname)
-                out=name+'_'+task
+        if operation:
+            self.ops[operation]['proc'](self, task)
+        else:
+            logging.critical('No operation specified or inferred for task '+task+'!!')
 
-                print('DOING task.name=value',task + '.' + name,'=', value, 'inp:',inp, 'out:',out)
 
-                if re.search('^der',task):
-                    derproc(self,inp,out,task,fdl=value)
-                elif re.search('^agg',task):
-                    aggproc(self,task,inp,out,tml=value)
-                elif re.search('^join',task):
-                    joinproc(self,inp,out,task,rhs=value)
-                elif re.search('^metan',task):
-                    metanproc(self,inp,out,meta=value)
-                elif re.search('^metax',task):
-                    metaxproc(self,inp,meta=value)
-                elif re.search('^meta',task):
-                    metaproc(self,inp,out,meta=value)
-                elif re.search('^copy',task):
-                    copyproc(self,inp,to=value)
-                elif re.search('^rename',task):
-                    renameproc(self,task,inp,out,map=value)
-                #elif re.search('^cmd',step):
-                #    cmdproc(self,inp,out,meta=value)
-                elif re.search('^fin',task):
-                    finproc(self,task)
-                else:
-                    raise Exception('Task',task,'not a supported task')
+
+
+#            print a
+#            fields = {'name':clean_name,'email':clean_email}
+
+#        for key in fields:
+#        fields[key]()
+#            if value is None:
+#                pass
+#            else:
+#                print('DOING ',task + '.' + name,'=', value)
+#                inp=prevname
+#                _,out,_=stem(prevname)
+#                out=name+'_'+task
+
+
+
+#                print('DOING task.name=value',task + '.' + name,'=', value, 'inp:',inp, 'out:',out)
+
+#                if re.search('^der',task):
+#                    derproc(self,inp,out,task,fdl=value)
+#                elif re.search('^agg',task):
+#                    aggproc(self,task,inp,out,tml=value)
+#                elif re.search('^join',task):
+#                    joinproc(self,inp,out,task,rhs=value)
+#                elif re.search('^metan',task):
+#                    metanproc(self,inp,out,meta=value)
+#                elif re.search('^metax',task):
+#                    metaxproc(self,inp,meta=value)
+#                elif re.search('^meta',task):
+#                    metaproc(self,inp,out,meta=value)
+#                elif re.search('^copy',task):
+#                    copyproc(self,inp,to=value)
+#                elif re.search('^rename',task):
+#                    renameproc(self,task,inp,out,map=value)
+#                #elif re.search('^cmd',step):
+#                #    cmdproc(self,inp,out,meta=value)
+#                elif re.search('^fin',task):
+#                    finproc(self,task)
+#                else:
+#                    raise Exception('Task',task,'not a supported task')
 
 
 def metaxproc(self,inp,meta):
@@ -275,25 +306,174 @@ def sequence(parallel, inp, out, i, namelist):
 
 
 
-def derproc(self,inp,out,task,fdl):
+def HasValue(task, names, *args):
+    n=0
+    valid=True
+    for arg in args:
+        n=n+1
+        if not(arg):
+            missing=names.split(',')[n-1]
+            logging.critical('TASK '+task+' IS MISSING ARG '+missing)
+            valid=False
+    if not(valid):
+        exit()
 
-    if os.path.isfile(rundirsub+'//'+out+'.ftr'):
-        print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
+
+def derproc(self,task):
+#   'der': {'proc': derproc, 'required': ['input', 'derivations'],  'optional': ['output']},
+
+    inp=config.get(task+'.in')
+    if '/' not in inp:
+        inp=rundirsub+'/'+inp
+
+    out=config.get(task+'.out') or task
+    if '/' not in out:
+        out = rundirsub + '/' + out
+
+    fdlfile = make_copy_file_or_arg(config.get(task + '.fdl'), out + '_.fdl')
+
+    var = config.get(task + '.var')
+    if var is not None:
+        fdlfile = expand_dollarvar(self, inp, out, fdlfile, task, var)
+
+    HasValue(task, 'in,out,fdl', inp, out, fdlfile)
+
+    if os.path.isfile(rundirsub+'/'+out+'.ftr'):
+        print('Not overwriting', rundirsub+'/'+out+'.ftr','already exists')
+        return
     else:
-
-        ## Make local copy of fdl
-        fdlfile=make_copy_file_or_arg(fdl,rundirsub,out+'_.fdl')
-
-        var = config.get(task+'.var')
-        if var is not None:
-            fdlfile=expand_dollarvar(self, inp, out, fdlfile, task, var)
+        qsderive(derivations=fdlfile, input=inp, output=out+'.ftr')
 
 
-        qsderive(fdlfile, rundirsub+'//'+inp, rundirsub+'//'+out+'.ftr')
+def joinproc(self,task):
+        print('PROC joinproc')
+        inp = config.get(task + '.in')
+        if '/' not in inp:
+            inp = rundirsub + '/' + inp
+
+        out = config.get(task + '.out') or task
+        if '/' not in out:
+            out = rundirsub + '/' + out
+
+        rhs = config.get(task + '.join')
+        rhs = globfoci(rhs)
+
+        keys = config.get(task + '.keys') or config.get('.keys')
+        if keys is None:
+            raise Exception('No key set for ',task)
+
+        suffix = config.get(task+'.suffix') or ''
+        _except = config.get(task+'.except')
+
+
+        offsets = config.get(task + '.offsets') or config.get('.offsets')
+        if offsets is not None:
+            rhs, offsetlist=expand_offset_date(rhs, offsets)
+            print('RHS:',rhs)
+            print('Length offsets and rhs',len(offsets),len(rhs))
+        else:
+            rhs, offsetlist=rhs, [offsets]
+            print('RHS:',rhs)
+            print('Length rhs',len(rhs))
+
+        if os.path.isfile( out + '.ftr'):
+            print('Not overwriting', out + '.ftr', 'already exists')
+        else:
+
+            for i in range(len(rhs)):
+                focusdir, focusbase = dir_base(rhs[i])
+                rhsfocus = focusbase.split('.')[0]
+                print('i, focusdir, focusbase', i, focusdir, focusbase)
+                print('focus, offset',rhsfocus,offsetlist[i])
+                if '.' in re.sub('.ftr','',focusbase):  ## fieldnames exist
+                    rhsfields=re.sub('.ftr','',focusbase).split('.')[1]
+                else:
+                    rhsfields=map
+
+                newrhsfocus=rhs[i]
+                if offsets is not None:
+                    suffix_offset=suffix+offsetlist[i]
+
+                    newrhsfocus,newrhsfields=renameproc(self,task,focusdir+'/'+rhsfocus,rundirsub+'/'+rhsfocus+'_renamed',map=rhsfields,suffix=suffix_offset,_except=keys)
+                        #???? map of all fields, but really only what what matches in list
+                else:
+                    newrhsfields=rhsfields
+
+                print("newrhsfields",newrhsfields)
+                if i==0:
+                    #  First join goes from 'inp' to 'out'
+
+                    qsjoinplus(inp+'.ftr', keys, out+'.ftr',newrhsfocus,fields=newrhsfields)
+                else:
+                    # Subsequent joins go from 'out' to 'out'
+
+                    print('yyyy',  inp, keys, out + '.ftr', 'qqq', newrhsfocus, 'www', newrhsfields)
+                    qsjoinplus(out+'.ftr', keys, out+'.ftr',newrhsfocus,fields=newrhsfields)
+
+
+
+
+def joinproc2(self,task):
+
+
+    inp = config.get(task + '.in')
+    if '/' not in inp:
+        inp = rundirsub + '/' + inp
+
+    out = config.get(task + '.out') or task
+    if '/' not in out:
+        out = rundirsub + '/' + out
+
+    join =  config.get(task + '.join')
+
+    keys = config.get(task + '.keys') or config.get('.keys')
+
+    suffix = config.get(task+'.suffix') or ''
+
+    _except = config.get(task + '.except')
+
+    rhs,_=get_search_items(join,['.ftr'])
+
+    offsets = config.get(task + '.offsets', config.get('.offsets'))
+    if offsets is not None:
+        rhs, offsetlist = expand_offset_date(rhs, offsets)
+        print('RHS:', rhs)
+        print('Length offsets and rhs', len(offsets), len(rhs))
+    else:
+        rhs, offsetlist = [rhs], [offsets]
+
+    print(join)
+    ##for i in range(len(join)):
+    ##    print('index:',i)
+    ##    focusdir, focusbase=dir_base(join[i])
+    ##    rhsfocus=focusbase.split('.')[0]
+    ##    if '.' in focusbase: ## fieldnames exist
+    ##        rhsfields=focusbase.split('.')[1]
+    ##    else:
+    ##        rhsfields=None
+##
+    ##    newrhsfocus=rundirsub+'/'+task+'_'+str(i)
+    ##    if offsets is not None:
+    ##        suffix_offset=suffix+offsetlist[i]
+    ##        newrhsfocus,newrhsfields=renameproc(self,task,focusdir+'/'+rhsfocus,rundirsub+'/'+rhsfocus+'_renamed',map=rhsfields,suffix=suffix_offset,_except=keys)
+    ##    else:
+    ##        newrhsfields=rhsfields
+
+
+    ####    if i==0:
+    ####        #  First join goes from 'inp' to 'out'
+    ####        qsjoinplus(rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',newrhsfocus,fields=newrhsfields)
+    ####    else:
+    ####        # Subsequent joins go from 'out' to 'out'
+    ####        qsjoinplus(rundirsub+'//'+out, keys, rundirsub+'//'+out+'.ftr',newrhsfocus,fields=newrhsfields)
+
+
+
 
 
 
 def renameproc(self,task,inp,out,map,suffix=None,prefix=None,_except=None):
+    print('PROC renameproc',self,task,inp,out,map)
     # Map is either a file, old=new list as a string, or fieldname patterns to be used with suffix or prefix
 
     if os.path.isfile(rundirsub+'//'+out+'.ftr'):
@@ -340,56 +520,56 @@ def renameproc(self,task,inp,out,map,suffix=None,prefix=None,_except=None):
 
         return out, newfields
 
-def make_copy_file_or_arg(filearg,dir,outname):
+def make_copy_file_or_arg(filearg,outname):
 
-    localfile=dir+'//'+outname
     if not os.path.isfile(filearg):
-        print(outname,filearg)
-        f = open(localfile, 'w')
+        # Write property to a file
+        f = open(outname, 'w')
         f.write(filearg)
         f.close()
     else:
-        copyfile(filearg, localfile)
-    return localfile
+        #Copy a file
+        copyfile(filearg, outname)
+    return outname
 
 
 def expand_dollarvar(self, inp, out, fdl_tml_file, task, var):
 
-            print('expand_dollarvar',inp, out, fdl_tml_file, task, var)
+            logging.debug('expand_dollarvar '+inp+', '+out+', '+fdl_tml_file+', '+task+', '+var)
             trim = config.get(task+'.trim')
             if trim is not None:
-                if type(trim) is tuple:
-                    # print('TUPLE')
-                    pattern=trim[0]
-                    replace=trim[1]
+                #if type(trim) is tuple:
+                if ',' in trim:
+                    print('TUPLE')
+                    trimpattern=trim.split(',')[0]
+                    trimreplace=trim.split(',')[1]
                 else:
-                    pattern=trim
-                    replace=''
+                    trimpattern=trim
+                    trimreplace=''
             else:
-                pattern='dummy'
-                replace='dummy'
+                trimpattern='dummy'
+                trimreplace='dummy'
 
-            print('var: ',pattern,replace)
+            logging.debug('var: '+trimpattern+' '+trimreplace)
 
+            # Regex if contains anything not alphanumerics, underscores or commas
             isregex = len(re.sub("[a-zA-Z0-9_,]","",var)) > 0
             if isregex:
-                patterns=getmatchingfields(rundirsub+'//'+inp,var)
+                patterns=getmatchingfields(inp,var)
             else:
                 patterns=[]
                 for pattern in var.split(','):
                     patterns.append(pattern)
             print('PATTERNS',patterns)
 
-            fdlfile_2=rundirsub+'//'+out+'_2.fdl'
+            fdlfile_2=out+'_2.fdl'
             fout = open(fdlfile_2,'w')
 
             #Write non-recurring derivations
 
             fout.write('/////// User parameters\n')
             fout.write('// var:'+str(var))
-            fout.write('\n')
             fout.write('// trim:'+str(trim))
-            fout.write('\n')
             fout.write('\n')
 
             #Write non-recurring derivations
@@ -402,9 +582,9 @@ def expand_dollarvar(self, inp, out, fdl_tml_file, task, var):
 
             # Write recurring derivations
             for pattern in patterns:
-                #print('Pattern:@@@@@',pattern)
+                #print('Pattern:@@@@@',trimpattern,trimreplace)
                 if trim is not None:
-                    pattern=re.sub(pattern,replace,pattern)
+                    pattern=re.sub(trimpattern,trimreplace,pattern)
 
                 with open(fdl_tml_file, 'rU') as fin:
                     for line in fin:
@@ -412,8 +592,6 @@ def expand_dollarvar(self, inp, out, fdl_tml_file, task, var):
                             #print('##var##','\$var',line,re.sub('\$var',pattern,line))
                             fout.write(re.sub('\$var',pattern,line))
                             fout.write('\n')
-
-
 
             fin.close()
             fout.close()
@@ -482,6 +660,8 @@ def joinprocold(self,inp,out,task,rhs):
             if '.' in focusbase: ## fieldnames are listed, eg. source.field1,field2,...
                 rhsfields=focusbase.split('.')[1]
                 # Rename where necessary
+
+
             else:
                 rhsfields=None
 
@@ -492,61 +672,6 @@ def joinprocold(self,inp,out,task,rhs):
                 # Subsequent joins go from 'out' to 'out'
                 qsjoinplus(rundirsub+'//'+out, keys, rundirsub+'//'+out+'.ftr',focusdir+'/'+rhsfocus,fields=rhsfields)
 
-
-
-def joinproc(self,inp,out,task,rhs):
-
-    if os.path.isfile(rundirsub+'//'+out+'.ftr'):
-        print('Not overwriting', rundirsub+'//'+out+'.ftr','already exists')
-    else:
-
-        name=os.path.splitext(inp)[0]
-
-        keys = config.get(name + '.keys',config.get('.keys'))
-        if keys is None:
-            raise Exception('No key set for ',name)
-
-        suffix = config.get(task+'.suffix') or ''
-        _except = config.get(task+'.except')
-
-        offsets = config.get(task + '.offsets',config.get('.offsets'))
-        if offsets is not None:
-            rhs, offsetlist=expand_offset_date(rhs, offsets)
-            print('RHS:',rhs)
-            print('Length offsets and rhs',len(offsets),len(rhs))
-        else:
-            rhs, offsetlist=[rhs], [offsets]
-
-
-        for i in range(len(rhs)):
-            print('I:',i)
-            focusdir, focusbase=dir_base(rhs[i])
-            focusdir, focusbase=dir_base(rhs[i])
-            rhsfocus=focusbase.split('.')[0]
-            #print('focus, offset',rhsfocus,offsetlist[i])
-            if '.' in focusbase: ## fieldnames exist
-                rhsfields=focusbase.split('.')[1]
-            else:
-                rhsfields=map
-
-            newrhsfocus=rundirsub+'/'+rhsfocus
-            if offsets is not None:
-                suffix_offset=suffix+offsetlist[i]
-                newrhsfocus,newrhsfields=renameproc(self,task,focusdir+'/'+rhsfocus,rundirsub+'/'+rhsfocus+'_renamed',map=rhsfields,suffix=suffix_offset,_except=keys)
-#???? map of all fields, but really only what what matches in list
-            else:
-                newrhsfields=rhsfields
-
-
-            if i==0:
-                #  First join goes from 'inp' to 'out'
-                print('xxxx',rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',newrhsfocus,fields=newrhsfields)
-                qsjoinplus(rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',newrhsfocus,fields=newrhsfields)
-            else:
-                # Subsequent joins go from 'out' to 'out'
-
-                print('xxxx',rundirsub+'//'+inp, keys, rundirsub+'//'+out+'.ftr',newrhsfocus,fields=newrhsfields)
-                qsjoinplus(rundirsub+'//'+out, keys, rundirsub+'//'+out+'.ftr',newrhsfocus,fields=newrhsfields)
 
 
 def dir_base(file):
@@ -604,14 +729,14 @@ def expand_offset_date(list, offsets):
     return expandedlist, offsetlist
 
 
-def getsources(sourcelist):
+def getfoci(sourcelist):
     for source in sourcelist:
-        #source=os.path.splitext(os.path.basename(source))[0]
+        # source=os.path.splitext(os.path.basename(source))[0]
 
-        name=os.path.splitext(os.path.basename(source))[0]
+        name = os.path.splitext(os.path.basename(source))[0]
         if '_' in name or '.' in name:
-            raise Exception('UNDERSCORE OR PERIOD IN SOURCE NAME '+name+' : NOT ALLOwED!')
-        suffix=os.path.splitext(os.path.basename(source))[1]
+            raise Exception('UNDERSCORE OR PERIOD IN SOURCE NAME ' + name + ' : NOT ALLOwED!')
+        suffix = os.path.splitext(os.path.basename(source))[1]
 
         print('Fetching ', name, suffix, source)
 
@@ -622,8 +747,7 @@ def getsources(sourcelist):
         elif suffix == '.txt':
             gettxt(source)
         else:
-            raise Exception('Suffix '+suffix+' for item '+name+' not known!!!')
-
+            raise Exception('Suffix ' + suffix + ' for item ' + name + ' not known!!!')
 
 
 def getsql(sql):
@@ -659,7 +783,8 @@ def gettxt(txt):
 
 def runqsdb(command, args, failonbad=True):
 
-    print('EXECUTING',qshome+command,[qshome+command]+args)
+    logging.info('EXECUTING '+qshome+command)
+    logging.info('with args '+str(args))
     result = os.spawnv(os.P_WAIT, qshome+command, [qshome+command]+args)
     if result==1 and failonbad:
             raise Exception( qshome+command,' failed for ',[command]+args)
@@ -681,18 +806,6 @@ def runqsdbOther(command, arglist, failonbad=True):
 
 def qscopy(ffrom,to,force=None):
 
-    args=[]
-    args.extend(['-from',ffrom,'-to',to])
-
-    for arg in []:
-        if eval(arg):
-            args.extend(['-'+arg,eval(arg)])
-
-    for arg in ['force']:
-        if eval(arg):
-            args.extend(['-'+arg])
-
-    runqsdb('qscopy', args)
 
 
 def qsimportdb(udc,sql,output,fields=None,xfields=None,force=None):
@@ -814,7 +927,7 @@ def qsexportmetadata(input, metadata):
 
 
 def qssortfix(input,keys):
-        print('INPUT for sortfix:',input)
+        print('PROC sortfix  INPUT for sortfix:',input)
         sorted=os.path.splitext(input)[0]+'__s.ftr'
         if os.path.isfile(rundirsub+'//'+sorted):
             return sorted
@@ -829,12 +942,13 @@ def qssortfix(input,keys):
 
 
 def qsjoinplus(input, keys, output, join, fields=None, xfields=None, force=None):
-
+    print('PROC qsjoinplus', input, keys, output, join)
     presort=True
     if presort:
         input=qssortfix(input,keys)
         join=qssortfix(join,keys)
 
+    print('input, keys, output, join, fields, xfields, force \n',input, keys, output, join, fields, xfields, force)
     qsjoin(input, keys, output, join, fields, xfields, force)
 
 
@@ -905,7 +1019,7 @@ def getmatchingfields(focus,patterns,_except=''):
         pattern='^'+pattern+'$'
         latestmatchingfields=[]
         for f in fields:
-            print('ff',pattern,f)
+            #print('ff',pattern,f)
             if re.match(pattern,f,re.IGNORECASE) and (fieldtype==None or re.match(fieldtype,fielddict[f]['type'],re.IGNORECASE)):
                 latestmatchingfields.append(f)
 
@@ -923,9 +1037,17 @@ def getmatchingfields(focus,patterns,_except=''):
     return dedupematchingfields
 
 
+class main:
+
+    def __init__(self):
+
+        self.operations = ['der','join']
+        self.ops = {
+            'der': {'proc': derproc, 'required': ['input', 'derivations'],  'optional': ['output']},
+            'join': {'proc': joinproc, 'required': ['input', 'aggregations'], 'optional': ['output']}
+        }
+
+        self.tasklist = config.get('tasklist').split(',')
+        executetasklist(self)
+
 main()
-
-#print(re.sub('create *([A-Za-z0-9_()\.\*]*).*','\\1',n))
-
-#var=
-
